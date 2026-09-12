@@ -3,7 +3,20 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "wayfarer.db"))
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
+
+
+def database_url(value: str | None) -> str:
+    """Use SQLite locally and normalize ordinary Postgres URLs for psycopg."""
+    if not value:
+        return f"sqlite:///{DATABASE_PATH}"
+    if value.startswith("postgres://"):
+        value = f"postgresql://{value.removeprefix('postgres://')}"
+    if value.startswith("postgresql://"):
+        return f"postgresql+psycopg://{value.removeprefix('postgresql://')}"
+    return value
+
+
+DATABASE_URL = database_url(os.getenv("DATABASE_URL"))
 # There is intentionally no fallback secret. The API refuses to start until a
 # real secret is supplied, preventing accidentally forgeable production tokens.
 JWT_SECRET = os.getenv("JWT_SECRET", "")

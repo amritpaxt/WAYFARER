@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 
-from app.config import REVEAL_QUEST_THRESHOLD, REWARDS
+from app.config import REVEAL_QUEST_THRESHOLD, REWARDS, database_url
 from app.database import Base
 from app.models import Episode, Quest, UnlockedFragment, User
 from app.seed import STORY, seed
@@ -46,6 +46,13 @@ def test_xp_curve_increases():
 
 def test_fragment_thresholds_are_ordered():
     assert REVEAL_QUEST_THRESHOLD >= 2 * 3
+
+
+def test_postgres_urls_use_the_psycopg_sqlalchemy_driver():
+    url = database_url("postgres://db.example/wayfarer")
+    assert url == "postgresql+psycopg://db.example/wayfarer"
+    assert database_url("postgresql://db.example/wayfarer") == url
+    assert create_engine(url).dialect.name == "postgresql"
 
 
 def test_all_seven_episodes_unlock_their_case_files():

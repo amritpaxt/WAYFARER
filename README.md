@@ -101,7 +101,7 @@ Open the Vite URL shown in the terminal (normally `http://localhost:5173`). Crea
 | `DEMO_MODE` | No | `false` | Enables `POST /dev/advance-day` and the in-app **End shift** control when `true`. Keep `false` in production. |
 | `ALLOWED_ORIGINS` | No | `https://app.example.com` | Comma-separated browser origins allowed to call the API. |
 | `DATABASE_PATH` | No | `/var/data/wayfarer.db` | SQLite file location. Use a persistent mounted volume in production. |
-| `DATABASE_URL` | No | `sqlite:///C:/data/wayfarer.db` | Full SQLAlchemy database URL. Overrides the URL built from `DATABASE_PATH`. |
+| `DATABASE_URL` | No | `postgresql://...` | Full SQLAlchemy database URL. Overrides the URL built from `DATABASE_PATH`. Ordinary `postgresql://` URLs are supported. |
 
 ### Frontend — `frontend/.env`
 
@@ -157,6 +157,12 @@ uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
 Set `JWT_SECRET`, `ALLOWED_ORIGINS`, `DATABASE_PATH` (or `DATABASE_URL`), and `DEMO_MODE=false` in the host's secret/environment-variable settings. Attach persistent storage and point `DATABASE_PATH` to that volume, such as `/var/data/wayfarer.db`; an ephemeral filesystem will erase player data on redeploy.
+
+### Free Render + Supabase Postgres
+
+To keep player data without paying for a disk, create a free Supabase project and copy its **Session pooler** connection string from **Connect**. In Render, set the copied value as `DATABASE_URL` and omit `DATABASE_PATH`. Include `sslmode=require` if Supabase did not include it in the copied URL. The app normalizes standard `postgresql://` connection strings for its PostgreSQL driver.
+
+This arrangement keeps data in Supabase when Render’s free web service spins down. Render’s free service can take about a minute to wake after 15 idle minutes, and Supabase pauses a free database after one week of inactivity.
 
 ### Frontend
 

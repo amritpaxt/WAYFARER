@@ -32,11 +32,12 @@ async def lifespan(_: FastAPI):
         if "story_day" not in quest_columns:
             connection.execute(text("ALTER TABLE quests ADD COLUMN story_day INTEGER"))
             # Retain today’s existing progress during the one-time migration.
+            current_day = "DATE('now', 'localtime')" if engine.dialect.name == "sqlite" else "CURRENT_DATE"
             connection.execute(
                 text(
                     "UPDATE quests SET story_day = ("
                     "SELECT day_index FROM characters WHERE characters.user_id = quests.user_id"
-                    ") WHERE is_completed = 1 AND DATE(completed_at) = DATE('now', 'localtime')"
+                    f") WHERE is_completed = 1 AND DATE(completed_at) = {current_day}"
                 )
             )
     with SessionLocal() as db:
