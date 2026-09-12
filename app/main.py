@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from .config import CATEGORY_STAT, DEMO_MODE, REVEAL_QUEST_THRESHOLD, REWARDS
+from .config import ALLOWED_ORIGINS, CATEGORY_STAT, DEMO_MODE, REVEAL_QUEST_THRESHOLD, REWARDS
 from .database import Base, SessionLocal, engine, get_db
 from .models import Episode, InventoryItem, Quest, ShopItem, UnlockedFragment, User
 from .schemas import CharacterOut, Credentials, InventoryItemOut, PurchaseOut, QuestCreate, QuestOut, ShopItemOut, Token
@@ -34,7 +34,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Wayfarer API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -136,13 +136,14 @@ def story_day(day_number: int, user: User = Depends(current_user), db: Session =
         else:
             reveal = {"text": episode.reveal_hard if row.variant_shown == "hard" else episode.reveal_normal, "variant": row.variant_shown, "unlocked_at": row.unlocked_at}
     finale = None
-    if day_number == 7:
+    final_vow_complete = db.scalar(select(Quest).where(Quest.user_id == user.id, Quest.is_final_vow.is_(True), Quest.is_completed.is_(True)))
+    if day_number == 7 and final_vow_complete:
         highest = max(user.character.stats, key=lambda stat: stat.value).name
         total = db.scalars(select(Quest).where(Quest.user_id == user.id, Quest.is_completed.is_(True))).all()
         category = max((quest.category for quest in total), key=lambda name: sum(q.category == name for q in total), default="the quiet work")
-        finale = f"{highest} carried you through {len(total)} completed cases. You returned most often to {category}; the town will remember that choice."
+        finale = f"{highest} carried you through {len(total)} completed cases. You returned most often to {category}; the town will remember that choice. You are not who you were — you are what you choose now."
     completed = completed_today_count(db, user.id)
-    return {"day_number": day_number, "title": episode.title, "is_teaser": False, "setup": episode.setup, "fragments": fragments, "reveal": reveal, "finale": finale, "progress": {"completed_today": completed, "fragment_count": len(fragments), "fragment_total": len(episode.fragments_normal), "reveal_threshold": REVEAL_QUEST_THRESHOLD}}
+    return {"day_number": day_number, "title": episode.title, "is_teaser": False, "setup": episode.setup, "fragments": fragments, "reveal": reveal, "finale": finale, "final_vow_required": day_number == 7 and not bool(final_vow_complete), "progress": {"completed_today": completed, "fragment_count": len(fragments), "fragment_total": len(episode.fragments_normal), "reveal_threshold": REVEAL_QUEST_THRESHOLD}}
 
 
 @app.get("/shop/items", response_model=list[ShopItemOut])

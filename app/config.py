@@ -2,13 +2,15 @@ from pathlib import Path
 import os
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATABASE_URL = f"sqlite:///{BASE_DIR / 'wayfarer.db'}"
-JWT_SECRET = "change-this-before-production"
+DATABASE_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "wayfarer.db"))
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-insecure-secret-change-me")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60 * 24 * 7
 REVEAL_QUEST_THRESHOLD = 8
 RESOURCE_DECAY_PER_MISSED_DAY = 5
 DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in {"1", "true", "yes", "on"}
+ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if origin.strip()]
 
 REWARDS = {
     "Easy": {"xp": 10, "gold": 5, "resource": 5},

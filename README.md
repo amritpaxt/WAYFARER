@@ -1,28 +1,39 @@
 # WAYFARER
 
-WAYFARER is a Life-RPG framed as a noir detective mystery: a memory-wiped police chief rebuilds their life one completed case at a time. The interface uses near-black and slate panels, amber for momentum, teal for clarity, and muted blood-rust only when the story becomes unreliable. Playfair Display gives case files their pulp-noir voice while IBM Plex Sans keeps controls crisp and accessible.
+WAYFARER is a noir investigative Life RPG. Complete real-world cases to earn experience, rebuild Chief Rook's memory, and uncover a fixed seven-night mystery. Low Clarity changes the delivery of a story beat, never its underlying facts.
 
 ## Run the backend
 
 ```powershell
-cd C:\Users\Admin\Downloads\WAYFARER-main\WAYFARER-main
+cd WAYFARER
 python -m pip install -r requirements.txt
-$env:DEMO_MODE="true" # optional; enables the in-world Sleep control
+$env:JWT_SECRET="a-long-random-production-secret"
+$env:DEMO_MODE="true" # optional; enables the in-world End shift control
 python -m uvicorn app.main:app --reload --port 8000
 ```
 
-Copy `.env.example` and set a long `JWT_SECRET` before deployment. The API persists its SQLite data in `wayfarer.db`. On startup it safely adds the story-day column to older local databases and refreshes the seven seeded episodes.
+Copy `.env.example` and set a long `JWT_SECRET` before deployment. `ALLOWED_ORIGINS` accepts a comma-separated frontend allowlist. `DATABASE_PATH` controls where SQLite is stored (or set a full `DATABASE_URL`). On startup the API safely adds the story-day column to older local databases and refreshes the seven seeded episodes.
 
 ## Run the frontend
 
 ```powershell
-cd C:\Users\Admin\Downloads\WAYFARER-main\WAYFARER-main\frontend
+cd frontend
 Copy-Item .env.example .env
 npm install
 npm run dev
 ```
 
-Set `VITE_API_BASE_URL` in `frontend/.env` if the API is not on `http://localhost:8000`. The frontend stores only the JWT in localStorage; character, quests, story, shop, inventory, and demo progression are always reloaded from the FastAPI API.
+Set `VITE_API_BASE_URL` in `frontend/.env` if the API is not on `http://localhost:8000`. The frontend stores only the JWT in localStorage; character, quests, story, shop, inventory, and demo progression are always reloaded from the FastAPI API. The generated-art directory is optional: every image has an in-app gradient or SVG fallback.
+
+## Deploy
+
+Deploy the backend to Render (or equivalent) with:
+
+```text
+uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+Set `JWT_SECRET`, `DEMO_MODE`, `ALLOWED_ORIGINS`, and `DATABASE_PATH`. Attach a persistent disk and point `DATABASE_PATH` to it (for example `/var/data/wayfarer.db`); SQLite on an ephemeral filesystem loses players and progress on redeploy. Deploy the `frontend` folder to Vercel or Netlify using `npm run build`, and set `VITE_API_BASE_URL` to the public API URL.
 
 ## Notes
 
