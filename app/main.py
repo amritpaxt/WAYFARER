@@ -6,26 +6,39 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session, selectinload
 
-from .config import ALLOWED_ORIGINS, CATEGORY_STAT, DEMO_MODE, REVEAL_QUEST_THRESHOLD, REWARDS
+from .config import ALLOWED_ORIGINS, CATEGORY_STAT, DEMO_MODE, JWT_SECRET, REVEAL_QUEST_THRESHOLD, REWARDS
 from .database import Base, SessionLocal, engine, get_db
 from .models import Episode, InventoryItem, Quest, ShopItem, UnlockedFragment, User
 from .schemas import CharacterOut, Credentials, InventoryItemOut, PurchaseOut, QuestCreate, QuestOut, ShopItemOut, Token
 from .security import create_token, current_user, hash_password, verify_password
 from .seed import seed
-from .services import advance_story_day, apply_login_tick, character_payload, complete_quest, create_user_profile, completed_today_count, ensure_final_vow, inventory_payload
+from .services import advance_story_day, apply_login_tick, character_payload, complete_quest, create_user_profile, completed_story_day_count, ensure_final_vow, inventory_payload
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if not JWT_SECRET:
+        raise RuntimeError("JWT_SECRET must be set before starting WAYFARER")
     Base.metadata.create_all(bind=engine)
     # Lightweight migration for existing hackathon databases.
     with engine.begin() as connection:
         character_columns = {column["name"] for column in inspect(engine).get_columns("characters")}
         episode_columns = {column["name"] for column in inspect(engine).get_columns("episodes")}
+        quest_columns = {column["name"] for column in inspect(engine).get_columns("quests")}
         if "day_index" not in character_columns:
             connection.execute(text("ALTER TABLE characters ADD COLUMN day_index INTEGER NOT NULL DEFAULT 1"))
         if "setup" not in episode_columns:
             connection.execute(text("ALTER TABLE episodes ADD COLUMN setup TEXT NOT NULL DEFAULT ''"))
+        if "story_day" not in quest_columns:
+            connection.execute(text("ALTER TABLE quests ADD COLUMN story_day INTEGER"))
+            # Retain today’s existing progress during the one-time migration.
+            connection.execute(
+                text(
+                    "UPDATE quests SET story_day = ("
+                    "SELECT day_index FROM characters WHERE characters.user_id = quests.user_id"
+                    ") WHERE is_completed = 1 AND DATE(completed_at) = DATE('now', 'localtime')"
+                )
+            )
     with SessionLocal() as db:
         seed(db)
     yield
@@ -142,7 +155,7 @@ def story_day(day_number: int, user: User = Depends(current_user), db: Session =
         total = db.scalars(select(Quest).where(Quest.user_id == user.id, Quest.is_completed.is_(True))).all()
         category = max((quest.category for quest in total), key=lambda name: sum(q.category == name for q in total), default="the quiet work")
         finale = f"{highest} carried you through {len(total)} completed cases. You returned most often to {category}; the town will remember that choice. You are not who you were — you are what you choose now."
-    completed = completed_today_count(db, user.id)
+    completed = completed_story_day_count(db, user)
     return {"day_number": day_number, "title": episode.title, "is_teaser": False, "setup": episode.setup, "fragments": fragments, "reveal": reveal, "finale": finale, "final_vow_required": day_number == 7 and not bool(final_vow_complete), "progress": {"completed_today": completed, "fragment_count": len(fragments), "fragment_total": len(episode.fragments_normal), "reveal_threshold": REVEAL_QUEST_THRESHOLD}}
 
 

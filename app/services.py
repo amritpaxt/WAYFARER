@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime
 from math import ceil
 
 from sqlalchemy import select
@@ -37,16 +37,24 @@ def apply_login_tick(character: Character) -> int:
     return missed_days
 
 
-def completed_today_count(db: Session, user_id: int) -> int:
-    start = datetime.combine(date.today(), time.min)
-    return len(db.scalars(select(Quest).where(Quest.user_id == user_id, Quest.is_completed.is_(True), Quest.completed_at >= start)).all())
+def completed_story_day_count(db: Session, user: User) -> int:
+    """Count cases completed in the currently open story night."""
+    return len(
+        db.scalars(
+            select(Quest).where(
+                Quest.user_id == user.id,
+                Quest.is_completed.is_(True),
+                Quest.story_day == user.character.day_index,
+            )
+        ).all()
+    )
 
 
 def unlock_available_story(db: Session, user: User) -> list[UnlockedFragment]:
     episode = db.scalar(select(Episode).where(Episode.day_number == user.character.day_index))
     if not episode:
         return []
-    completed = completed_today_count(db, user.id)
+    completed = completed_story_day_count(db, user)
     existing = {row.fragment_index for row in db.scalars(select(UnlockedFragment).where(UnlockedFragment.user_id == user.id, UnlockedFragment.episode_id == episode.id)).all()}
     eligible = [index for index in range(len(episode.fragments_normal)) if completed >= (index + 1) * 2]
     if completed >= REVEAL_QUEST_THRESHOLD:
@@ -68,6 +76,7 @@ def complete_quest(db: Session, user: User, quest: Quest) -> list[UnlockedFragme
     # could hide newly completed cases around local midnight.
     quest.completed_at = datetime.now()
     character = user.character
+    quest.story_day = character.day_index
     character.xp += quest.xp_reward
     character.gold += quest.gold_reward
     character.resource_meter = min(100, character.resource_meter + quest.resource_reward)

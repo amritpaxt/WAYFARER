@@ -39,4 +39,16 @@ Set `JWT_SECRET`, `DEMO_MODE`, `ALLOWED_ORIGINS`, and `DATABASE_PATH`. Attach a 
 
 Calendar rollover advances a character's `day_index` by the number of elapsed days (capped at 7) and reduces clarity using the same service used by demo advancement. `POST /dev/advance-day` is unavailable unless `DEMO_MODE=true`. Shop cosmetics are single-purchase items, returning `409` if already owned and `402` when gold is insufficient.
 
-Run backend checks with `python -m pytest` after installing `pytest`.
+## Verify
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest
+cd frontend
+npm run build
+```
+
+The test suite exercises all seven episodes: each gets its three fragments at
+2, 4, and 6 completed cases, its reveal at 8 cases, and the final-vow path on
+night seven. The next episode opens after one calendar day; cases completed in
+an earlier episode do not count toward the new one.

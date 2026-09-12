@@ -30,6 +30,7 @@ class QuestOut(BaseModel):
     resource_reward: int
     created_at: datetime
     completed_at: datetime | None
+    story_day: int | None
 
 
 class CharacterOut(BaseModel):

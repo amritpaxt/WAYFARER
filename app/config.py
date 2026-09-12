@@ -4,7 +4,9 @@ import os
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", BASE_DIR / "wayfarer.db"))
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DATABASE_PATH}")
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-insecure-secret-change-me")
+# There is intentionally no fallback secret. The API refuses to start until a
+# real secret is supplied, preventing accidentally forgeable production tokens.
+JWT_SECRET = os.getenv("JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60 * 24 * 7
 REVEAL_QUEST_THRESHOLD = 8

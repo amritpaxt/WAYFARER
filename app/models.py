@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text
@@ -9,12 +9,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+def utc_now_naive() -> datetime:
+    """Return a UTC timestamp compatible with the app's naive SQL columns."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     character: Mapped["Character"] = relationship(back_populates="user", cascade="all, delete-orphan", uselist=False)
     quests: Mapped[list["Quest"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     unlocked_fragments: Mapped[list["UnlockedFragment"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -56,8 +61,11 @@ class Quest(Base):
     gold_reward: Mapped[int] = mapped_column(Integer)
     resource_reward: Mapped[int] = mapped_column(Integer)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Story nights are game state, rather than a wall-clock date. This keeps
+    # the demo advance control from carrying prior cases into a new episode.
+    story_day: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
     user: Mapped[User] = relationship(back_populates="quests")
 
 
@@ -82,7 +90,7 @@ class UnlockedFragment(Base):
     episode_id: Mapped[int] = mapped_column(ForeignKey("episodes.id"))
     fragment_index: Mapped[int] = mapped_column(Integer)
     variant_shown: Mapped[str] = mapped_column(String(10))
-    unlocked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    unlocked_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now_naive)
     user: Mapped[User] = relationship(back_populates="unlocked_fragments")
     episode: Mapped[Episode] = relationship(back_populates="unlocked_fragments")
 
