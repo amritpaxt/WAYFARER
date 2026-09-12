@@ -20,6 +20,7 @@ def character_payload(character: Character) -> dict:
         "xp_to_next_level": xp_required_for_next_level(character.level),
         "resource_meter": character.resource_meter,
         "gold": character.gold,
+        "day_index": character.day_index,
         "last_login_date": character.last_login_date,
         "stats": {stat.name: stat.value for stat in character.stats},
     }
@@ -30,6 +31,8 @@ def apply_login_tick(character: Character) -> int:
     missed_days = max((today - character.last_login_date).days, 0)
     if missed_days:
         character.resource_meter = max(0, character.resource_meter - missed_days * RESOURCE_DECAY_PER_MISSED_DAY)
+        # Calendar rollover advances the case file, capped at the seven-night arc.
+        character.day_index = min(7, character.day_index + missed_days)
     character.last_login_date = today
     return missed_days
 
@@ -40,7 +43,7 @@ def completed_today_count(db: Session, user_id: int) -> int:
 
 
 def unlock_available_story(db: Session, user: User) -> list[UnlockedFragment]:
-    episode = db.scalar(select(Episode).where(Episode.day_number == 1))
+    episode = db.scalar(select(Episode).where(Episode.day_number == user.character.day_index))
     if not episode:
         return []
     completed = completed_today_count(db, user.id)
@@ -83,3 +86,27 @@ def create_user_profile(db: Session, user: User) -> Character:
     character.stats = [Stat(name=name, value=0) for name in STAT_NAMES]
     db.add(character)
     return character
+
+
+def advance_story_day(character: Character) -> bool:
+    """Advance one calendar day using the same decay rule as login ticks."""
+    if character.day_index >= 7:
+        return False
+    character.day_index += 1
+    character.resource_meter = max(0, character.resource_meter - RESOURCE_DECAY_PER_MISSED_DAY)
+    character.last_login_date = date.today()
+    return True
+
+
+def ensure_final_vow(db: Session, user: User) -> None:
+    if user.character.day_index != 7 or db.scalar(select(Quest).where(Quest.user_id == user.id, Quest.is_final_vow.is_(True))):
+        return
+    rewards = {"xp": 50, "gold": 25, "resource": 15}
+    db.add(Quest(user_id=user.id, title="Make the Final Vow", category="Reading/Reflection", difficulty="Hard", is_final_vow=True, xp_reward=rewards["xp"], gold_reward=rewards["gold"], resource_reward=rewards["resource"]))
+
+
+def inventory_payload(user: User) -> list[dict]:
+    return [
+        {"id": row.id, "shop_item_id": row.shop_item_id, "name": row.shop_item.name, "description": row.shop_item.description}
+        for row in user.inventory
+    ]

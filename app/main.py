@@ -3,28 +3,42 @@ from datetime import date
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import inspect, select, text
+from sqlalchemy.orm import Session, selectinload
 
-from .config import CATEGORY_STAT, REVEAL_QUEST_THRESHOLD, REWARDS
+from .config import CATEGORY_STAT, DEMO_MODE, REVEAL_QUEST_THRESHOLD, REWARDS
 from .database import Base, SessionLocal, engine, get_db
-from .models import Episode, Quest, ShopItem, UnlockedFragment, User
-from .schemas import CharacterOut, Credentials, QuestCreate, QuestOut, ShopItemOut, Token
+from .models import Episode, InventoryItem, Quest, ShopItem, UnlockedFragment, User
+from .schemas import CharacterOut, Credentials, InventoryItemOut, PurchaseOut, QuestCreate, QuestOut, ShopItemOut, Token
 from .security import create_token, current_user, hash_password, verify_password
 from .seed import seed
-from .services import apply_login_tick, character_payload, complete_quest, create_user_profile, completed_today_count
+from .services import advance_story_day, apply_login_tick, character_payload, complete_quest, create_user_profile, completed_today_count, ensure_final_vow, inventory_payload
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # Lightweight migration for existing hackathon databases.
+    with engine.begin() as connection:
+        character_columns = {column["name"] for column in inspect(engine).get_columns("characters")}
+        episode_columns = {column["name"] for column in inspect(engine).get_columns("episodes")}
+        if "day_index" not in character_columns:
+            connection.execute(text("ALTER TABLE characters ADD COLUMN day_index INTEGER NOT NULL DEFAULT 1"))
+        if "setup" not in episode_columns:
+            connection.execute(text("ALTER TABLE episodes ADD COLUMN setup TEXT NOT NULL DEFAULT ''"))
     with SessionLocal() as db:
         seed(db)
     yield
 
 
 app = FastAPI(title="Wayfarer API", version="0.1.0", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -61,6 +75,7 @@ def get_character(user: User = Depends(current_user)):
 @app.post("/character/login-tick")
 def login_tick(user: User = Depends(current_user), db: Session = Depends(get_db)):
     missed_days = apply_login_tick(user.character)
+    ensure_final_vow(db, user)
     db.commit()
     return {"missed_days": missed_days, "character": character_payload(user.character)}
 
@@ -74,8 +89,11 @@ def list_quests(user: User = Depends(current_user), db: Session = Depends(get_db
 def create_quest(payload: QuestCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
     if payload.category not in CATEGORY_STAT or payload.difficulty not in REWARDS:
         raise HTTPException(status_code=422, detail="Unknown quest category or difficulty")
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="A case needs a title")
     rewards = REWARDS[payload.difficulty]
-    quest = Quest(user_id=user.id, title=payload.title.strip(), category=payload.category, difficulty=payload.difficulty, xp_reward=rewards["xp"], gold_reward=rewards["gold"], resource_reward=rewards["resource"])
+    quest = Quest(user_id=user.id, title=title, category=payload.category, difficulty=payload.difficulty, xp_reward=rewards["xp"], gold_reward=rewards["gold"], resource_reward=rewards["resource"])
     db.add(quest)
     db.commit()
     db.refresh(quest)
@@ -107,7 +125,7 @@ def story_day(day_number: int, user: User = Depends(current_user), db: Session =
     episode = db.scalar(select(Episode).where(Episode.day_number == day_number))
     if not episode:
         raise HTTPException(status_code=404, detail="Day not found")
-    if day_number != 1:
+    if day_number > user.character.day_index:
         return {"day_number": day_number, "title": episode.title, "is_teaser": True, "fragments": [], "reveal": None}
     rows = db.scalars(select(UnlockedFragment).where(UnlockedFragment.user_id == user.id, UnlockedFragment.episode_id == episode.id).order_by(UnlockedFragment.fragment_index)).all()
     fragments, reveal = [], None
@@ -117,10 +135,52 @@ def story_day(day_number: int, user: User = Depends(current_user), db: Session =
             fragments.append({"index": row.fragment_index, "text": source[row.fragment_index], "variant": row.variant_shown, "unlocked_at": row.unlocked_at})
         else:
             reveal = {"text": episode.reveal_hard if row.variant_shown == "hard" else episode.reveal_normal, "variant": row.variant_shown, "unlocked_at": row.unlocked_at}
+    finale = None
+    if day_number == 7:
+        highest = max(user.character.stats, key=lambda stat: stat.value).name
+        total = db.scalars(select(Quest).where(Quest.user_id == user.id, Quest.is_completed.is_(True))).all()
+        category = max((quest.category for quest in total), key=lambda name: sum(q.category == name for q in total), default="the quiet work")
+        finale = f"{highest} carried you through {len(total)} completed cases. You returned most often to {category}; the town will remember that choice."
     completed = completed_today_count(db, user.id)
-    return {"day_number": 1, "title": episode.title, "is_teaser": False, "setup": "You wake in the town with no memory. Local officers bring you in and tell you that you are their Chief, missing after a lead went wrong and found after hours of searching.", "fragments": fragments, "reveal": reveal, "progress": {"completed_today": completed, "fragment_count": len(fragments), "fragment_total": len(episode.fragments_normal), "reveal_threshold": REVEAL_QUEST_THRESHOLD}}
+    return {"day_number": day_number, "title": episode.title, "is_teaser": False, "setup": episode.setup, "fragments": fragments, "reveal": reveal, "finale": finale, "progress": {"completed_today": completed, "fragment_count": len(fragments), "fragment_total": len(episode.fragments_normal), "reveal_threshold": REVEAL_QUEST_THRESHOLD}}
 
 
 @app.get("/shop/items", response_model=list[ShopItemOut])
 def shop_items(db: Session = Depends(get_db)):
     return db.scalars(select(ShopItem).order_by(ShopItem.cost)).all()
+
+
+@app.get("/inventory/me", response_model=list[InventoryItemOut])
+def inventory(user: User = Depends(current_user)):
+    return inventory_payload(user)
+
+
+@app.post("/shop/purchase/{item_id}", response_model=PurchaseOut)
+def purchase(item_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    item = db.get(ShopItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    if any(row.shop_item_id == item_id for row in user.inventory):
+        raise HTTPException(status_code=409, detail="That relic is already in your evidence locker")
+    if user.character.gold < item.cost:
+        raise HTTPException(status_code=402, detail="Not enough gold for this relic")
+    user.character.gold -= item.cost
+    db.add(InventoryItem(user_id=user.id, shop_item_id=item.id))
+    db.commit()
+    db.refresh(user)
+    return {"character": character_payload(user.character), "inventory": inventory_payload(user)}
+
+
+@app.get("/meta")
+def meta():
+    return {"demo_mode": DEMO_MODE}
+
+
+@app.post("/dev/advance-day")
+def dev_advance_day(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    if not DEMO_MODE:
+        raise HTTPException(status_code=404, detail="Not found")
+    advanced = advance_story_day(user.character)
+    ensure_final_vow(db, user)
+    db.commit()
+    return {"advanced": advanced, "character": character_payload(user.character)}

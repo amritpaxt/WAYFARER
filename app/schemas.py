@@ -39,6 +39,7 @@ class CharacterOut(BaseModel):
     xp_to_next_level: int
     resource_meter: int
     gold: int
+    day_index: int
     last_login_date: date
     stats: dict[str, int]
 
@@ -49,3 +50,15 @@ class ShopItemOut(BaseModel):
     name: str
     cost: int
     description: str
+
+
+class InventoryItemOut(BaseModel):
+    id: int
+    shop_item_id: int
+    name: str
+    description: str
+
+
+class PurchaseOut(BaseModel):
+    character: CharacterOut
+    inventory: list[InventoryItemOut]

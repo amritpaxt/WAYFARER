@@ -29,6 +29,7 @@ class Character(Base):
     xp: Mapped[int] = mapped_column(Integer, default=0)
     resource_meter: Mapped[int] = mapped_column(Integer, default=100)
     gold: Mapped[int] = mapped_column(Integer, default=0)
+    day_index: Mapped[int] = mapped_column(Integer, default=1)
     last_login_date: Mapped[date] = mapped_column(Date, default=date.today)
     user: Mapped[User] = relationship(back_populates="character")
     stats: Mapped[list["Stat"]] = relationship(back_populates="character", cascade="all, delete-orphan")
@@ -65,6 +66,7 @@ class Episode(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     day_number: Mapped[int] = mapped_column(Integer, unique=True, index=True)
     title: Mapped[str] = mapped_column(String(120))
+    setup: Mapped[str] = mapped_column(Text, default="")
     fragments_normal: Mapped[list[str]] = mapped_column(JSON)
     fragments_hard: Mapped[list[str]] = mapped_column(JSON)
     reveal_normal: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -91,6 +93,7 @@ class ShopItem(Base):
     name: Mapped[str] = mapped_column(String(120))
     cost: Mapped[int] = mapped_column(Integer)
     description: Mapped[str] = mapped_column(Text)
+    inventory_items: Mapped[list["InventoryItem"]] = relationship(back_populates="shop_item")
 
 
 class InventoryItem(Base):
@@ -99,3 +102,4 @@ class InventoryItem(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     shop_item_id: Mapped[int] = mapped_column(ForeignKey("shop_items.id"))
     user: Mapped[User] = relationship(back_populates="inventory")
+    shop_item: Mapped[ShopItem] = relationship(back_populates="inventory_items")

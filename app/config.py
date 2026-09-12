@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATABASE_URL = f"sqlite:///{BASE_DIR / 'wayfarer.db'}"
@@ -7,6 +8,7 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = 60 * 24 * 7
 REVEAL_QUEST_THRESHOLD = 8
 RESOURCE_DECAY_PER_MISSED_DAY = 5
+DEMO_MODE = os.getenv("DEMO_MODE", "false").lower() in {"1", "true", "yes", "on"}
 
 REWARDS = {
     "Easy": {"xp": 10, "gold": 5, "resource": 5},
