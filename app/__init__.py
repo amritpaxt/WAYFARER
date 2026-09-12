@@ -1,0 +1,1 @@
+"""Wayfarer application package."""
