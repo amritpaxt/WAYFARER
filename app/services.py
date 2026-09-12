@@ -63,7 +63,10 @@ def unlock_available_story(db: Session, user: User) -> list[UnlockedFragment]:
 
 def complete_quest(db: Session, user: User, quest: Quest) -> list[UnlockedFragment]:
     quest.is_completed = True
-    quest.completed_at = datetime.utcnow()
+    # Daily progression uses the player's local calendar date, so store the
+    # completion timestamp on that same clock. Mixing UTC with date.today()
+    # could hide newly completed cases around local midnight.
+    quest.completed_at = datetime.now()
     character = user.character
     character.xp += quest.xp_reward
     character.gold += quest.gold_reward
